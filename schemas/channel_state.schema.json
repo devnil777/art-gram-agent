@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "channel_state.schema.json",
+  "title": "ChannelState",
+  "description": "Checkpoint state file for a single Telegram channel.",
+  "type": "object",
+  "required": ["channel_id", "error_count", "status", "last_attempt_at", "_version"],
+  "additionalProperties": false,
+  "properties": {
+    "_version": {
+      "type": "integer",
+      "description": "State file schema version. Currently 1.",
+      "enum": [1]
+    },
+    "channel_id": {
+      "type": "string",
+      "description": "Channel username used as system key.",
+      "minLength": 1
+    },
+    "last_success_message_id": {
+      "description": "Highest message_id confirmed written to raw storage. Null if never succeeded.",
+      "oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]
+    },
+    "last_success_message_date": {
+      "description": "message_date of the last successfully stored message.",
+      "oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]
+    },
+    "last_success_run_id": {
+      "description": "run_id of the last run that successfully stored data for this channel.",
+      "oneOf": [{"type": "string"}, {"type": "null"}]
+    },
+    "last_success_at": {
+      "description": "Wall-clock UTC time of the last successful write.",
+      "oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]
+    },
+    "last_attempt_at": {
+      "type": "string",
+      "description": "Wall-clock UTC time of the most recent state save (success or error).",
+      "format": "date-time"
+    },
+    "error_count": {
+      "type": "integer",
+      "description": "Cumulative number of runs that ended in error for this channel.",
+      "minimum": 0
+    },
+    "status": {
+      "type": "string",
+      "description": "Current channel status.",
+      "enum": ["ok", "error"]
+    },
+    "last_error": {
+      "description": "Error message from the last failed run. Present only when status=error.",
+      "oneOf": [{"type": "string"}, {"type": "null"}]
+    }
+  }
+}

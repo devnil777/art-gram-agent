@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "raw_message.schema.json",
+  "title": "RawMessage",
+  "description": "A single normalized Telegram message record stored in JSONL format.",
+  "type": "object",
+  "required": [
+    "channel_id",
+    "channel_username",
+    "message_id",
+    "message_date",
+    "text",
+    "is_forwarded",
+    "ingested_at",
+    "run_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "channel_id": {
+      "type": "string",
+      "description": "Channel username used as system key. No @ prefix.",
+      "minLength": 1
+    },
+    "channel_username": {
+      "type": "string",
+      "description": "Telegram channel username. Same as channel_id in current version.",
+      "minLength": 1
+    },
+    "message_id": {
+      "type": "integer",
+      "description": "Telegram message ID. Unique within channel. Monotonically increasing.",
+      "minimum": 1
+    },
+    "message_date": {
+      "type": "string",
+      "description": "ISO 8601 UTC datetime when message was originally posted.",
+      "format": "date-time"
+    },
+    "text": {
+      "type": "string",
+      "description": "Plaintext content of the message. Empty string if no text."
+    },
+    "raw": {
+      "description": "Full Telethon message serialized via .to_dict(). Null if serialization failed.",
+      "oneOf": [{"type": "object"}, {"type": "null"}]
+    },
+    "is_forwarded": {
+      "type": "boolean",
+      "description": "True if this message is forwarded from another channel or user."
+    },
+    "reply_to_message_id": {
+      "description": "message_id of the message this is a reply to. Null if not a reply.",
+      "oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]
+    },
+    "edit_date": {
+      "description": "ISO 8601 UTC datetime of last edit. Null if never edited.",
+      "oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]
+    },
+    "ingested_at": {
+      "type": "string",
+      "description": "ISO 8601 UTC datetime when the collector wrote this record.",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Identifier of the collector run that produced this record.",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z$"
+    }
+  }
+}

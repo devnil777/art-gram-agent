@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "event_extraction.schema.json",
+  "title": "EventExtraction",
+  "description": "LLM response schema for event extraction from a social media post (prompt1).",
+  "type": "object",
+  "required": ["events"],
+  "additionalProperties": false,
+  "properties": {
+    "events": {
+      "type": "array",
+      "description": "List of extracted events. Empty array if no events found.",
+      "items": {
+        "type": "object",
+        "required": ["title", "type", "confidence"],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "description": "Event title exactly as stated in the text, or null if not found.",
+            "oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]
+          },
+          "description": {
+            "description": "Additional event details from the text, or null if not present.",
+            "oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]
+          },
+          "place": {
+            "description": "Venue or location exactly as written in the text, or null.",
+            "oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]
+          },
+          "datetime": {
+            "description": "Date and time in the original format from the text, or null.",
+            "oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]
+          },
+          "start_datetime": {
+            "description": "Calculated fixed ISO 8601 date and time of the event start.",
+            "oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]
+          },
+          "short_description": {
+            "description": "Short description of the event combining its details.",
+            "oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]
+          },
+          "type": {
+            "type": "string",
+            "description": "Event type from the allowed list.",
+            "enum": ["exhibition", "tour", "talk", "workshop", "meetup", "presentation", "other"]
+          },
+          "confidence": {
+            "type": "integer",
+            "description": "Confidence score 1-5 based on completeness of extracted data.",
+            "minimum": 1,
+            "maximum": 5
+          }
+        }
+      }
+    }
+  }
+}

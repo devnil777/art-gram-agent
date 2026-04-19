@@ -1,0 +1,4 @@
+telethon>=1.34.0
+PyYAML>=6.0
+litellm>=1.30.0
+jsonschema>=4.20.0

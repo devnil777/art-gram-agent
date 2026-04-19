@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "run_log.schema.json",
+  "title": "RunLog",
+  "description": "Per-execution journal file written at the end of each collector run.",
+  "type": "object",
+  "required": [
+    "run_id",
+    "started_at",
+    "finished_at",
+    "channels_processed",
+    "channels_errored",
+    "total_messages_collected",
+    "channel_results"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Unique run identifier. Format: YYYYMMDDTHHMMSSz.",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z$"
+    },
+    "started_at": {
+      "type": "string",
+      "description": "ISO 8601 UTC datetime when the run started.",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "description": "ISO 8601 UTC datetime when the run finished.",
+      "format": "date-time"
+    },
+    "channels_processed": {
+      "type": "integer",
+      "description": "Total number of active channels attempted.",
+      "minimum": 0
+    },
+    "channels_errored": {
+      "type": "integer",
+      "description": "Number of channels that resulted in an error.",
+      "minimum": 0
+    },
+    "total_messages_collected": {
+      "type": "integer",
+      "description": "Sum of all messages stored across all channels in this run.",
+      "minimum": 0
+    },
+    "channel_results": {
+      "type": "array",
+      "description": "Per-channel outcome objects.",
+      "items": {
+        "type": "object",
+        "required": ["channel", "status", "messages_collected"],
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Channel identifier (username)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Outcome for this channel.",
+            "enum": ["ok", "error"]
+          },
+          "messages_collected": {
+            "type": "integer",
+            "description": "Number of new messages stored in this run.",
+            "minimum": 0
+          },
+          "last_message_id": {
+            "description": "Highest message_id stored. Present only on success with messages.",
+            "oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]
+          },
+          "error": {
+            "description": "Error description. Present only when status=error.",
+            "oneOf": [{"type": "string"}, {"type": "null"}]
+          }
+        }
+      }
+    }
+  }
+}

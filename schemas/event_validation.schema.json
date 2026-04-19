@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "event_validation.schema.json",
+  "title": "EventValidation",
+  "description": "LLM response schema for event extraction validation (prompt2).",
+  "type": "object",
+  "required": ["is_valid", "issues", "overall_score", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "is_valid": {
+      "type": "boolean",
+      "description": "True if the extraction passed all validation checks."
+    },
+    "issues": {
+      "type": "array",
+      "description": "List of detected issues. Empty array if no issues.",
+      "items": {
+        "type": "object",
+        "required": ["event_index", "field", "problem"],
+        "additionalProperties": false,
+        "properties": {
+          "event_index": {
+            "type": "integer",
+            "description": "Zero-based index of the event with the issue.",
+            "minimum": 0
+          },
+          "field": {
+            "type": "string",
+            "description": "Name of the problematic field.",
+            "enum": ["title", "description", "short_description", "place", "datetime", "start_datetime", "type", "confidence"]
+          },
+          "problem": {
+            "type": "string",
+            "description": "Brief description of the problem."
+          },
+          "suggestion": {
+            "description": "Suggested fix, or null if no fix needed.",
+            "oneOf": [{"type": "string"}, {"type": "null"}]
+          }
+        }
+      }
+    },
+    "overall_score": {
+      "type": "integer",
+      "description": "Overall quality score 1-10. 10 = perfect.",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "summary": {
+      "type": "string",
+      "description": "Brief summary of the validation result."
+    }
+  }
+}
