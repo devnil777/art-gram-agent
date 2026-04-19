@@ -107,6 +107,22 @@ def main():
         help="Filter by channel username or ID (optional)",
     )
     parser.add_argument(
+        "--exclude-channel",
+        action="append",
+        metavar="CHANNEL_NAME",
+        help="Exclude channel(s) by title or username from processing. Can be repeated.",
+    )
+    parser.add_argument(
+        "--message-id",
+        type=int,
+        help="Process only a specific message ID (debug mode). Implies --force.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force reprocessing even if message was already processed",
+    )
+    parser.add_argument(
         "--incremental",
         action="store_true",
         default=True,
@@ -134,8 +150,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # Determine incremental mode
-    incremental = not args.full
+    # Determine incremental mode (disabled if --force or --message-id is used)
+    incremental = not args.full and not args.force and args.message_id is None
 
     # Determine report generation
     generate_report_flag = args.generate_report and not args.skip_report
@@ -144,6 +160,11 @@ def main():
 
     started_at = datetime.now(timezone.utc)
     log.info("=== Event processing pipeline started ===")
+
+    if args.message_id:
+        log.info("Debug mode: Processing message_id=%d", args.message_id)
+    if args.force:
+        log.info("Force mode: Reprocessing all selected messages")
 
     # Resolve base path and load configuration
     base_path = os.path.abspath(args.base_path)
@@ -191,12 +212,16 @@ def main():
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     # Process all messages
+    exclude_channel_names = list(config.processing.exclude_channels or [])
+
     results = process_all_messages(
         config=config,
         base_path=base_path,
         prompt1_text=prompt1_text,
         prompt2_text=prompt2_text,
         filter_channel=args.channel,
+        exclude_channel_names=exclude_channel_names,
+        filter_message_id=args.message_id,
         incremental=incremental,
         model_name=model_name,
         model_config=model_config,

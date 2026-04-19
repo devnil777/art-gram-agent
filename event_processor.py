@@ -364,7 +364,7 @@ def process_message(
                 description=ev_data.get("description"),
                 place=ev_data.get("place"),
                 datetime=ev_data.get("datetime"),
-                type=ev_data["type"],
+                type=ev_data.get("type"),
                 confidence=ev_data["confidence"],
                 start_datetime=ev_data.get("start_datetime"),
                 short_description=ev_data.get("short_description"),
@@ -480,6 +480,8 @@ def process_all_messages(
     prompt1_text: str,
     prompt2_text: str,
     filter_channel: Optional[str] = None,
+    exclude_channel_names: Optional[List[str]] = None,
+    filter_message_id: Optional[int] = None,
     incremental: bool = True,
     model_name: Optional[str] = None,
     model_config: Optional[dict] = None,
@@ -497,6 +499,8 @@ def process_all_messages(
         prompt1_text: Content of prompt1.md.
         prompt2_text: Content of prompt2.md.
         filter_channel: Optional channel username or ID to filter by.
+        exclude_channel_names: Optional list of channel titles or usernames to exclude.
+        filter_message_id: Optional specific message ID to process (debug mode).
         incremental: If True, skip already-processed messages. Default: True.
         model_name: LLM model name to record (default: from config.llm.model).
         model_config: LLM configuration dict (default: from config.llm).
@@ -519,6 +523,19 @@ def process_all_messages(
     messages = load_all_messages(base_path)
     channel_meta = load_channel_metadata(base_path)
 
+    exclude_names = {
+        name.strip().lower()
+        for name in (exclude_channel_names or [])
+        if name and name.strip()
+    }
+    if exclude_names:
+        log.info("Excluding channel names from processing: %s", ", ".join(sorted(exclude_names)))
+
+    # If filtering by message ID, skip incremental processing for that message
+    if filter_message_id is not None:
+        log.info("Debug mode: filtering to message_id=%d", filter_message_id)
+        incremental = False  # Force reprocessing of the target message
+
     # Load processed IDs if incremental mode
     processed_ids_by_channel: Dict[str, Set[int]] = {}
     if incremental:
@@ -536,10 +553,27 @@ def process_all_messages(
         channel_id = msg.get("channel_id", "")
         message_id = msg.get("message_id", 0)
 
+        # If filtering by message ID, skip non-matching messages
+        if filter_message_id is not None:
+            if message_id != filter_message_id:
+                continue
+
         # Get channel title and username from metadata
         meta = channel_meta.get(channel_id, {})
         channel_title = meta.get("title", channel_id)
         channel_username = meta.get("username", "")
+
+        # Exclude channels by title or username
+        if exclude_names:
+            channel_title_lower = (channel_title or "").lower()
+            channel_username_lower = (channel_username or "").lower()
+            if channel_title_lower in exclude_names or channel_username_lower in exclude_names:
+                log.debug(
+                    "Skipping excluded channel '%s' (%s)",
+                    channel_title,
+                    channel_username,
+                )
+                continue
 
         # Filter by channel if requested
         if filter_channel:

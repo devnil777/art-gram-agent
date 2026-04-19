@@ -67,14 +67,6 @@ def _parse_iso_datetime(date_value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _parse_iso_datetime(date_value: str) -> datetime:
-    """Parse ISO datetime string and return a UTC-aware datetime."""
-    parsed = datetime.fromisoformat(date_value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
 def _format_event_datetime(event: ExtractedEvent) -> str:
     """Format event date for human-readable report output."""
     date_value = event.start_datetime or event.datetime
@@ -131,22 +123,20 @@ def _is_recent_message(message_date: str, days: int = 1) -> bool:
     except (ValueError, TypeError):
         return False
 
-
 def _build_summary_text(
     report_config: ReportConfig,
     events: List[ExtractedEvent],
-    max_events: Optional[int] = 20,
-) -> str:
-    """Build a plain text summary for Telegram messages."""
-    if not events:
-        return "За выбранный период новых событий не найдено."
+    page_size_bytes: int,
+) -> List[str]:
+    """Build a list of event summary pages for Telegram messages.
 
-    summary_lines = [
-        f"Новости за последние {report_config.report_days} дней:",
-        "",
-    ]
+    Each summary item is treated as a separate page and must fit within
+    the provided page size.
+    """
+    pages: List[str] = []
+    limited = events
+    current_page = ""
 
-    limited = events[:max_events]
     for index, event in enumerate(limited, start=1):
         description = _get_event_description(event)
         event_date = _format_event_datetime(event)
@@ -154,24 +144,36 @@ def _build_summary_text(
         source_name = event.channel_title or event.channel_username or event.channel_id or "Источник"
         source_link = _build_message_link(report_config.telegram_base_url, event.channel_username, event.message_id)
 
-        summary_lines.append(f"{index}. {description}")
+        block_lines = [f"{index}. {description}"]
         details = []
         if event_date:
-            details.append(f"Когда: {event_date}")
+            details.append(f"**Когда**: {event_date}")
         if place:
-            details.append(f"Место: {place}")
+            details.append(f"**Место**: {place}")
         if source_link:
-            details.append(f"Источник: {source_name} {source_link}")
+            details.append(f"**Источник**: [{source_name}]({source_link})")
         else:
-            details.append(f"Источник: {source_name}")
+            details.append(f"**Источник**: {source_name}")
 
-        summary_lines.append("; ".join(details))
-        summary_lines.append("")
+        block_lines.append("\n".join(details))
+        block_text = "\n".join(block_lines).strip()
 
-    if len(events) > max_events:
-        summary_lines.append(f"...и ещё {len(events) - max_events} события(й) не показаны.")
+        if len(block_text.encode("utf-8")) > page_size_bytes:
+            raise ValueError("page_size_bytes too small for a single event summary")
 
-    return "\n".join(summary_lines)
+        candidate = block_text if not current_page else f"{current_page}\n\n{block_text}"
+        if len(candidate.encode("utf-8")) <= page_size_bytes:
+            current_page = candidate
+            continue
+
+        if current_page:
+            pages.append(current_page)
+        current_page = block_text
+
+    if current_page:
+        pages.append(current_page)
+
+    return pages
 
 
 def _sort_events(events: List[ExtractedEvent]) -> List[ExtractedEvent]:
@@ -268,11 +270,29 @@ def generate_report(
 def generate_report_text(
     report_config: ReportConfig,
     base_path: str,
-    results: Optional[List[ProcessingResult]] = None,
-    load_from_storage: bool = False,
-    max_events: Optional[int] = 20,
-) -> str:
-    """Generate a plain text summary of recent events for Telegram."""
+    results: Optional[List[ProcessingResult]],
+    load_from_storage: bool,
+    page_size_bytes: int,
+    target_identifier: Optional[str] = None,
+    skip_already_sent: bool = False,
+    days: Optional[int] = None,
+) -> List[str]:
+    """
+    Generate plain text report pages of recent events for Telegram.
+
+    Args:
+        report_config: Report configuration
+        base_path: Project base path
+        results: Optional list of processing results (if load_from_storage=False)
+        load_from_storage: Whether to load events from storage
+        page_size_bytes: Maximum bytes per page
+        target_identifier: If provided and skip_already_sent=True, filter out events already sent to this target
+        skip_already_sent: Whether to skip events already sent to the target
+        days: Override report_days from config
+
+    Returns:
+        List of text pages
+    """
     if load_from_storage:
         successful, _ = load_processed_events_from_storage(base_path)
         results = successful
@@ -284,8 +304,25 @@ def generate_report_text(
         if result.success and result.events:
             all_events.extend(result.events)
 
+    # Use override days if provided, else use config
+    report_days = days if days is not None else report_config.report_days
+    
     recent_events = [
-        e for e in all_events if _is_recent_message(e.message_date, days=report_config.report_days)
+        e for e in all_events if _is_recent_message(e.message_date, days=report_days)
     ]
+
+    # Filter out already sent events if requested
+    if skip_already_sent and target_identifier:
+        sent_map = storage.load_sent_events(base_path, target_identifier)
+        sent_ids = sent_map.get(target_identifier, set())
+        recent_events = [
+            e for e in recent_events
+            if f"{e.channel_id}:{e.message_id}" not in sent_ids
+        ]
+
     sorted_events = _sort_events(recent_events)
-    return _build_summary_text(report_config, sorted_events, max_events=max_events)
+    return _build_summary_text(
+        report_config,
+        sorted_events,
+        page_size_bytes=page_size_bytes,
+    )

@@ -72,17 +72,21 @@ def _make_serializable(obj):
         return str(obj)
 
 
-def append_messages(base_path: str, channel_id: str, messages: List[dict]):
+def append_messages(base_path: str, channel_id: str, messages: List[dict]) -> dict:
     """
-    Atomically append a batch of normalized messages to the daily JSONL file.
+    Atomically update/add normalized messages to the daily JSONL file.
+    Updates existing messages by message_id, adds new ones.
+
+    Returns dict with 'added' and 'updated' counts.
 
     Strategy:
-    1. Read existing content (if file exists).
-    2. Write existing + new content to a temp file with fsync.
-    3. Rename temp file over target (atomic on POSIX).
+    1. Read existing content and build dict by message_id.
+    2. Update/add new messages, count added/updated.
+    3. Write merged content to temp file with fsync.
+    4. Rename temp file over target (atomic on POSIX).
     """
     if not messages:
-        return
+        return {"added": 0, "updated": 0}
 
     # Group by date
     by_date: dict = {}
@@ -90,24 +94,48 @@ def append_messages(base_path: str, channel_id: str, messages: List[dict]):
         date_str = (m["message_date"] or "unknown")[:10]
         by_date.setdefault(date_str, []).append(m)
 
+    added_total = 0
+    updated_total = 0
+
     for date_str, day_msgs in by_date.items():
         target = raw_file_path(base_path, channel_id, date_str)
         dir_path = os.path.dirname(target)
         os.makedirs(dir_path, exist_ok=True)
 
-        # Read existing content
-        existing_lines = []
+        # Read existing content and build dict
+        existing_dict = {}
         if os.path.exists(target):
             with open(target, "r", encoding="utf-8") as f:
-                existing_lines = f.readlines()
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                        existing_dict[obj["message_id"]] = obj
+                    except json.JSONDecodeError:
+                        pass
 
-        new_lines = [json.dumps(m, ensure_ascii=True) + "\n" for m in day_msgs]
+        # Update/add new messages, count
+        added = 0
+        updated = 0
+        for m in day_msgs:
+            if m["message_id"] not in existing_dict:
+                added += 1
+            else:
+                updated += 1
+            existing_dict[m["message_id"]] = m
+
+        added_total += added
+        updated_total += updated
+
+        # Prepare lines, sorted by message_id for consistency
+        merged_lines = [json.dumps(obj, ensure_ascii=True) + "\n" for obj in sorted(existing_dict.values(), key=lambda x: x["message_id"])]
 
         fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.writelines(existing_lines)
-                f.writelines(new_lines)
+                f.writelines(merged_lines)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, target)
@@ -115,6 +143,8 @@ def append_messages(base_path: str, channel_id: str, messages: List[dict]):
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
             raise
+
+    return {"added": added_total, "updated": updated_total}
 
 
 def load_existing_ids(base_path: str, channel_id: str) -> set:
@@ -278,6 +308,139 @@ def load_processing_results(
                         )
 
     return results
+
+
+# ============================================================================
+# Sent Events Tracking (persistent storage of sent news summaries)
+# ============================================================================
+
+def sent_dir(base_path: str) -> str:
+    """Get the directory path for sent events tracking."""
+    return os.path.join(base_path, "sent")
+
+
+def sent_file_path(base_path: str, target_identifier: str) -> str:
+    """Get the JSONL file path for tracking sent events to a target."""
+    # Sanitize target identifier for use as filename
+    safe_target = target_identifier.replace("/", "_").replace(":", "_")
+    return os.path.join(sent_dir(base_path), f"{safe_target}.jsonl")
+
+
+def mark_events_as_sent(
+    base_path: str,
+    target_identifier: str,
+    event_ids: List[Dict[str, any]],
+) -> None:
+    """
+    Record that specific events were sent to a target channel.
+
+    Args:
+        base_path: Project base path
+        target_identifier: Target channel username or ID
+        event_ids: List of dicts with 'channel_id' and 'message_id' identifying events
+
+    Each record has format:
+    {
+        "target": "<identifier>",
+        "channel_id": "<source_channel_id>",
+        "message_id": <msg_id>,
+        "sent_at": "<ISO timestamp>"
+    }
+    """
+    if not event_ids:
+        return
+
+    target_path = sent_file_path(base_path, target_identifier)
+    dir_path = os.path.dirname(target_path)
+    os.makedirs(dir_path, exist_ok=True)
+
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Read existing content
+    existing_lines = []
+    if os.path.exists(target_path):
+        with open(target_path, "r", encoding="utf-8") as f:
+            existing_lines = f.readlines()
+
+    # Create new records
+    new_lines = []
+    for event in event_ids:
+        record = {
+            "target": target_identifier,
+            "channel_id": event.get("channel_id"),
+            "message_id": event.get("message_id"),
+            "sent_at": now,
+        }
+        new_lines.append(json.dumps(record, ensure_ascii=False, indent=None) + "\n")
+
+    # Atomic write
+    fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.writelines(existing_lines)
+            f.writelines(new_lines)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, target_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
+def load_sent_events(
+    base_path: str,
+    target_identifier: str = None,
+) -> Dict[str, set]:
+    """
+    Load sent events tracking information.
+
+    Args:
+        base_path: Project base path
+        target_identifier: If specified, load only events sent to this target
+
+    Returns:
+        Dict mapping target -> set of "channel_id:message_id" strings
+    """
+    sent_map = {}
+    sent_root = sent_dir(base_path)
+
+    if not os.path.isdir(sent_root):
+        return sent_map
+
+    # Determine which files to load
+    if target_identifier:
+        files_to_load = [sent_file_path(base_path, target_identifier)]
+    else:
+        files_to_load = [
+            os.path.join(sent_root, f)
+            for f in os.listdir(sent_root)
+            if f.endswith(".jsonl")
+        ]
+
+    for filepath in files_to_load:
+        if not os.path.exists(filepath):
+            continue
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    target = obj.get("target")
+                    channel_id = obj.get("channel_id")
+                    message_id = obj.get("message_id")
+                    
+                    if target and channel_id and message_id:
+                        if target not in sent_map:
+                            sent_map[target] = set()
+                        sent_map[target].add(f"{channel_id}:{message_id}")
+                except json.JSONDecodeError:
+                    pass
+
+    return sent_map
 
 
 def get_processed_message_ids(

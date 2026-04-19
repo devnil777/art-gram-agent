@@ -5,7 +5,8 @@ Loads processor_config.yaml with LLM, retry, and report settings.
 """
 
 import yaml
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 
 
 @dataclass
@@ -25,6 +26,7 @@ class ProcessingConfig:
     outer_retries: int
     skip_empty_text: bool
     min_text_length: int
+    exclude_channels: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -66,6 +68,7 @@ def load_processor_config(path: str) -> ProcessorConfig:
             outer_retries=int(proc["outer_retries"]),
             skip_empty_text=bool(proc["skip_empty_text"]),
             min_text_length=int(proc["min_text_length"]),
+            exclude_channels=[str(name).strip() for name in proc.get("exclude_channels", []) if name is not None],
         ),
         report=ReportConfig(
             output_dir=str(rep["output_dir"]),

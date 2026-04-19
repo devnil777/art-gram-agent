@@ -28,7 +28,7 @@ from state import (
     load_state,
     save_state,
 )
-from storage import append_messages, load_existing_ids, normalize_message
+from storage import append_messages, normalize_message
 from utils import generate_run_id, set_workspace_root_from_env
 
 
@@ -114,29 +114,32 @@ async def process_channel(
             "channel": channel_key,
             "status": "ok",
             "messages_collected": 0,
+            "messages_added": 0,
+            "messages_updated": 0,
         }
 
-    # Deduplicate against already-stored message_ids
-    stored_ids = load_existing_ids(base_path, channel_id)  # raw_dir adds "channel_" prefix
+    # Normalize messages (updates will be handled in storage)
     normalized = []
     for msg in raw_msgs:
-        if msg.id in stored_ids:
-            continue
         n = normalize_message(msg, channel_id, channel_username, run_id)
         normalized.append(n)
 
-    log.info("New unique messages to store: %d", len(normalized))
+    log.info("Messages to process: %d", len(normalized))
 
     if not normalized:
         return {
             "channel": channel_key,
             "status": "ok",
             "messages_collected": 0,
+            "messages_added": 0,
+            "messages_updated": 0,
         }
 
     # Attempt atomic write
     try:
-        append_messages(base_path, channel_id, normalized)  # raw_dir adds "channel_" prefix
+        result = append_messages(base_path, channel_id, normalized)  # raw_dir adds "channel_" prefix
+        added = result["added"]
+        updated = result["updated"]
     except Exception as e:
         log.error("Storage write failed for '%s': %s", channel_name, str(e))
         err_state = build_error_state(
@@ -148,32 +151,40 @@ async def process_channel(
             "status": "error",
             "error": str(e),
             "messages_collected": 0,
+            "messages_added": 0,
+            "messages_updated": 0,
         }
 
     # Only update state after confirmed write
     top_msg = normalized[-1]
+    previous_last = existing_state.get("last_success_message_id", 0) if existing_state else 0
+    new_last = max(previous_last, top_msg["message_id"])
+    new_date = top_msg["message_date"] if new_last == top_msg["message_id"] else (existing_state.get("last_success_message_date") if existing_state else top_msg["message_date"])
     new_state = build_success_state(
         channel_id=channel_key,
         channel_title=channel_name,
         channel_username=channel_username,
-        last_message_id=top_msg["message_id"],
-        last_message_date=top_msg["message_date"],
+        last_message_id=new_last,
+        last_message_date=new_date,
         run_id=run_id,
         existing_state=existing_state,
     )
     save_state(base_path, channel_key, new_state)
     log.info(
-        "Channel '%s': saved %d messages, last_message_id=%d",
+        "Channel '%s': added %d messages, updated %d messages, last_message_id=%d",
         channel_name,
-        len(normalized),
-        top_msg["message_id"],
+        added,
+        updated,
+        new_last,
     )
 
     return {
         "channel": channel_key,
         "status": "ok",
-        "messages_collected": len(normalized),
-        "last_message_id": top_msg["message_id"],
+        "messages_collected": added + updated,
+        "messages_added": added,
+        "messages_updated": updated,
+        "last_message_id": new_last,
     }
 
 
@@ -253,9 +264,7 @@ async def run_collector(config_path: str):
 
 def main():
     workspace_root = set_workspace_root_from_env("ART_GRAM_HOME")
-    config_path = os.environ.get("TGC_CONFIG", "config/app.yaml")
-    if not os.path.isabs(config_path):
-        config_path = os.path.join(workspace_root, config_path)
+    config_path = os.path.join(workspace_root, "config/app.yaml")
     asyncio.run(run_collector(config_path))
 
 
