@@ -48,13 +48,13 @@ def call_llm(config: LLMConfig, system_prompt: str, user_content: str) -> str:
 #,        "extra_body": {"thinking": {"type": "disabled"}}
     }
 
-    # Äîáàâëÿåì api_key, åñëè îí çàäàí
+    # Ğ”Ğ¾Ğ±Ğ°Ğ²Ğ»ÑĞµĞ¼ api_key, ĞµÑĞ»Ğ¸ Ğ¾Ğ½ Ğ·Ğ°Ğ´Ğ°Ğ½
     if config.api_key:
         params["api_key"] = config.api_key
     if config.api_base:
         params["api_base"] = config.api_base
 
-    # Äîáàâëÿåì ÷èñëîâûå ïàğàìåòğû òîëüêî åñëè îíè > 0
+    # Ğ”Ğ¾Ğ±Ğ°Ğ²Ğ»ÑĞµĞ¼ Ñ‡Ğ¸ÑĞ»Ğ¾Ğ²Ñ‹Ğµ Ğ¿Ğ°Ñ€Ğ°Ğ¼ĞµÑ‚Ñ€Ñ‹ Ñ‚Ğ¾Ğ»ÑŒĞºĞ¾ ĞµÑĞ»Ğ¸ Ğ¾Ğ½Ğ¸ > 0
     if config.temperature > 0:
         params["temperature"] = config.temperature
 
