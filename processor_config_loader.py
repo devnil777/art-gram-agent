@@ -10,13 +10,15 @@ from typing import List
 
 
 @dataclass
-class LLMConfig:
+class LLMModelConfig:
     model: str
     api_base: str
     api_key: str
     temperature: float
     max_tokens: int
     timeout: int
+    marker: str = ""
+    enabled: bool = True
 
 
 @dataclass
@@ -39,7 +41,7 @@ class ReportConfig:
 
 @dataclass
 class ProcessorConfig:
-    llm: LLMConfig
+    llm_models: List[LLMModelConfig]
     processing: ProcessingConfig
     report: ReportConfig
 
@@ -49,19 +51,28 @@ def load_processor_config(path: str) -> ProcessorConfig:
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
-    llm = raw["llm"]
+    llm_raw = raw.get("llm", [])
+    if isinstance(llm_raw, dict):
+        llm_raw = [llm_raw]
+
+    llm_models = []
+    for item in llm_raw:
+        llm_models.append(LLMModelConfig(
+            model=str(item.get("model", "")),
+            api_base=str(item.get("api_base", "")),
+            api_key=str(item.get("api_key", "")),
+            temperature=float(item.get("temperature", 0.0)),
+            max_tokens=int(item.get("max_tokens", 0)),
+            timeout=int(item.get("timeout", 0)),
+            marker=str(item.get("marker", "")),
+            enabled=bool(item.get("enabled", True)),
+        ))
+
     proc = raw["processing"]
     rep = raw["report"]
 
     return ProcessorConfig(
-        llm=LLMConfig(
-            model=str(llm["model"]),
-            api_base=str(llm["api_base"]),
-            api_key=str(llm["api_key"]),
-            temperature=float(llm["temperature"]),
-            max_tokens=int(llm["max_tokens"]),
-            timeout=int(llm["timeout"]),
-        ),
+        llm_models=llm_models,
         processing=ProcessingConfig(
             extraction_retries=int(proc["extraction_retries"]),
             validation_retries=int(proc["validation_retries"]),

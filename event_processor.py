@@ -90,7 +90,7 @@ def _run_extraction(
         )
         try:
             raw_response = call_llm(
-                config.llm, prompt1_text, message_text
+                config.llm_models, prompt1_text, message_text
             )
             ai_log.debug("RAW RESPONSE:\n%s", raw_response)
         except Exception as e:
@@ -157,7 +157,7 @@ def _run_validation(
         )
         try:
             raw_response = call_llm(
-                config.llm, prompt2_text, user_content
+                config.llm_models, prompt2_text, user_content
             )
             ai_log.debug("RAW RESPONSE:\n%s", raw_response)
         except Exception as e:
@@ -511,11 +511,11 @@ def process_all_messages(
     """
     # Default values
     if model_name is None:
-        model_name = config.llm.model
+        enabled_models = [m for m in config.llm_models if m.enabled]
+        model_name = enabled_models[0].model if enabled_models else "unknown"
     if model_config is None:
         model_config = {
-            "temperature": config.llm.temperature,
-            "max_tokens": config.llm.max_tokens,
+            "models_count": len(config.llm_models)
         }
     if run_id is None:
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
