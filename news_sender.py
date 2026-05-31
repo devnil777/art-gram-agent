@@ -173,6 +173,62 @@ async def send_news_summary(
     logger.info("News summary sent successfully.")
 
 
+async def send_admin_report(
+    app_config_path: str,
+    base_path: str,
+    target: str,
+) -> None:
+    from log_reporter import check_and_generate_report
+    logger = logging.getLogger("news_sender")
+    should_send, report_text = check_and_generate_report(base_path)
+    
+    if not should_send:
+        logger.info("No new log report to send for yesterday.")
+        return
+        
+    app_config = load_app_config(app_config_path)
+    session_name = app_config.telegram.session_name
+    if not os.path.isabs(session_name):
+        session_name = os.path.join(os.getcwd(), session_name)
+
+    client = TelegramClient(
+        session_name,
+        app_config.telegram.api_id,
+        app_config.telegram.api_hash,
+    )
+    
+    entity = parse_target_entity(target)
+    logger.info("Sending admin report to %s", target)
+    
+    pages = [report_text[i:i+4000] for i in range(0, len(report_text), 4000)]
+
+    async with client:
+        for page in pages:
+            await client.send_message(entity, page, link_preview=False, parse_mode="md")
+            
+    logger.info("Admin report sent successfully.")
+
+async def run_all(args, workspace_root) -> None:
+    if args.admin_report:
+        try:
+            await send_admin_report(
+                app_config_path="config/app.yaml",
+                base_path=workspace_root,
+                target=args.admin_report
+            )
+        except Exception as exc:
+            logging.getLogger("news_sender").error("Failed to send admin report: %s", exc)
+
+    await send_news_summary(
+        app_config_path="config/app.yaml",
+        processor_config_path="config/processor_config.yaml",
+        base_path=workspace_root,
+        target=args.target,
+        report_days=args.report_days,
+        skip_already_sent=not args.send_all,
+    )
+
+
 def main() -> int:
     workspace_root = set_workspace_root_from_env("ART_GRAM_HOME")
 
@@ -197,6 +253,10 @@ def main() -> int:
         help="Send all events, including already sent to this target (default: False, skip sent)",
     )
     parser.add_argument(
+        "--admin-report",
+        help="Telegram channel username to send the daily admin log report to (optional)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -207,16 +267,7 @@ def main() -> int:
     setup_logger(args.log_level)
 
     try:
-        asyncio.run(
-            send_news_summary(
-                app_config_path="config/app.yaml",
-                processor_config_path="config/processor_config.yaml",
-                base_path=workspace_root,
-                target=args.target,
-                report_days=args.report_days,
-                skip_already_sent=not args.send_all,
-            )
-        )
+        asyncio.run(run_all(args, workspace_root))
         return 0
     except Exception as exc:
         logging.getLogger("news_sender").error("Failed to send news summary: %s", exc)

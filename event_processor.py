@@ -333,7 +333,7 @@ def process_message(
         )
         if extraction is None:
             last_error = "Extraction failed: %s" % ext_error
-            log.warning(
+            log.error(
                 "Extraction exhausted retries on outer attempt %d: %s",
                 outer_attempt,
                 ext_error,

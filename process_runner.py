@@ -43,8 +43,9 @@ def setup_pipeline_logger(level: str = "INFO"):
         # File handler for processor logs
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
+        today_str = datetime.now().strftime("%Y-%m-%d")
         fh = logging.FileHandler(
-            os.path.join(log_dir, "processor.log"), encoding="utf-8"
+            os.path.join(log_dir, f"processor_{today_str}.log"), encoding="utf-8"
         )
         fh.setFormatter(formatter)
         logger.addHandler(fh)
@@ -54,7 +55,7 @@ def setup_pipeline_logger(level: str = "INFO"):
         ai_debug_logger.setLevel(logging.DEBUG)  # Always capture full detail in the debug log
         
         ai_fh = logging.FileHandler(
-            os.path.join(log_dir, "ai_debug.log"), encoding="utf-8"
+            os.path.join(log_dir, f"ai_debug_{today_str}.log"), encoding="utf-8"
         )
         # Use simpler formatter for AI debug to make it more like a transcript
         ai_formatter = logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
@@ -172,11 +173,18 @@ def main():
     log.info("Loading config from: %s", config_path)
     config = load_processor_config(config_path)
 
+    enabled_models = [m for m in config.llm_models if m.enabled]
+    if not enabled_models:
+        log.error("No enabled LLM models found in config")
+        return
+
+    first_model = enabled_models[0]
     log.info(
-        "LLM config: model=%s, api_base=%s, temperature=%.2f",
-        config.llm.model,
-        config.llm.api_base,
-        config.llm.temperature,
+        "LLM config: %d models enabled, primary model=%s, api_base=%s, temperature=%.2f",
+        len(enabled_models),
+        first_model.model,
+        first_model.api_base,
+        first_model.temperature,
     )
     log.info(
         "Retry config: extraction=%d, validation=%d, outer=%d",
@@ -202,10 +210,11 @@ def main():
     prompt2_text = load_prompt_file(prompt2_path)
 
     # Determine model name for recording
-    model_name = args.model_name if args.model_name else config.llm.model
+    model_name = args.model_name if args.model_name else first_model.model
     model_config = {
-        "temperature": config.llm.temperature,
-        "max_tokens": config.llm.max_tokens,
+        "models_count": len(enabled_models),
+        "primary_temperature": first_model.temperature,
+        "primary_max_tokens": first_model.max_tokens,
     }
 
     # Generate run ID

@@ -28,6 +28,11 @@ _context_filter = ContextFilter()
 
 
 def setup_logger(level: str, file_path: str) -> logging.Logger:
+    import datetime
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    base, ext = os.path.splitext(file_path)
+    file_path = f"{base}_{today_str}{ext}"
+
     log_dir = os.path.dirname(file_path)
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
